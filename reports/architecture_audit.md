@@ -102,7 +102,7 @@ NRTR label indices are pad/blank 0, unknown 1, BOS 2 and EOS 3. Dictionary entri
 
 ## Parameter totals
 
-These counts are derived from source tensor dimensions. Running statistics and sinusoidal values are excluded.
+The counts derived from source tensor dimensions match the downloaded training checkpoint. It contains 441 FP32 tensors with 58,150,582 scalar values. Of these, 55,527,798 are trainable weights and biases, 2,560,000 are sinusoidal position values, and 62,784 are BatchNorm running statistics. The training checkpoint's SHA-256 is `c4a110423c23739f157ff870e27f41649d8c89e4c8df5230c2cd2e9fd90a7e92`.
 
 | Module | Trainable scalars |
 |---|---:|
@@ -113,6 +113,7 @@ These counts are derived from source tensor dimensions. Running statistics and s
 | NRTR transformer | 35,979,264 |
 | Full training graph | 55,527,798 |
 | Unfused CTC inference path | 19,155,318 |
+| CTC inference path with backbone `rep()` | 19,114,006 |
 
 ## Data, loss and decoding
 
@@ -126,6 +127,7 @@ These counts are derived from source tensor dimensions. Running statistics and s
 ## Paper and source distinctions
 
 - Paper §2.1 describes token mixing with a residual outside its DW/SE expression. The source's same-shape block puts the identity in the RepDWConv sum before outer BN and optional SE, and its separate channel residual adds the already mixed tensor. Transition blocks have no identity. The source executes the branch ordering in the backbone table.
+- The recognition backbone's final evaluation pool also downsamples width by two. Paper §2.1.2 describes average pooling along height after the width-preserving stage transitions. The actual nominal width after the last stage is 80 and after pooling it is 40.
 - The paper compares deployed recognition sizes and describes NRTR as training-time guidance. The full checkpoint includes the auxiliary decoder and an unfused backbone, so its parameter total uses a different graph. The CTC branch uses LightSVTR and NRTR reads a separate linear projection of pooled backbone features.
 - The paper's local-global neck description agrees with the configured 1×7 local convolution and global attention. The actual pre-normalization order is determined by `Block.forward`, whose flag name alone would imply the opposite.
 

@@ -1,0 +1,15 @@
+numpy==1.26.4
+opencv-python-headless==4.11.0.86
+albumentations==1.4.24
+albucore==0.0.23
+PyYAML
+lmdb
+rapidfuzz
+pillow
+scikit-image
+shapely
+pyclipper
+tqdm
+requests
+packaging
+visualdl

@@ -148,6 +148,13 @@ def run(args):
                         else "activation")
                 report["layers"][f"train/{name}"] = compare(
                     archive[f"train/{name}"], captured[name], kind)
+            modules = dict(model.named_modules())
+            for key in sorted(archive.files):
+                if key.startswith("probes/") and key.endswith("/output"):
+                    path = key.removeprefix("probes/").removesuffix("/output")
+                    source = torch.from_numpy(archive[f"probes/{path}/input"]).to(args.device)
+                    report["layers"][key] = compare(archive[key], modules[path](source).cpu().numpy(),
+                                                   "activation")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
                            encoding="utf-8")

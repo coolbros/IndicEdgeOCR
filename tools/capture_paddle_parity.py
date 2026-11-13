@@ -13,6 +13,15 @@ import yaml
 
 from paddle_reference import CONFIG, PIN, capture, git, load_verified, make_operators, sha256
 
+PROBES = {
+    "backbone.conv1.stem1.conv", "backbone.conv1.stem2a.conv",
+    "backbone.conv1.pool", "backbone.blocks3.2.token_mixer.rep_dw",
+    "backbone.blocks3.2.channel_mixer.act", "head.ctc_encoder.encoder.local_conv",
+    "head.ctc_encoder.encoder.svtr_block.0.mixer",
+    "head.gtc_head.decoder.0.norm2", "head.gtc_head.decoder.0.norm3",
+    "head.gtc_head.decoder.3.norm3",
+}
+
 
 def run(args):
     source, output = args.source.resolve(), args.output.resolve()
@@ -44,6 +53,7 @@ def run(args):
     load_verified(config, model, checkpoint)
     arrays, shapes = {}, {}
     traces = {}
+    probes = {}
 
     def save(name):
         def hook(layer, inputs, output):
@@ -92,6 +102,13 @@ def run(args):
                 layer.eval()
         bn_layers = [layer for layer in model.sublayers() if isinstance(layer, paddle.nn.BatchNorm2D)]
         assert all(layer.training for layer in bn_layers)
+        def probe(name):
+            def hook(_layer, inputs, result):
+                probes[f"probes/{name}/input"] = inputs[0].numpy()
+                probes[f"probes/{name}/output"] = result.numpy()
+            return hook
+        handles.extend(layer.register_forward_post_hook(probe(name))
+                       for name, layer in model.named_sublayers() if name in PROBES)
         traces.clear()
         with capture(model, arrays, "train", shapes.setdefault("train", {})):
             outputs = model(tensors[0], data=tensors[1:])
@@ -103,10 +120,11 @@ def run(args):
         arrays.update({f"train/state/{name}": value.numpy()
                        for name, value in model.state_dict().items()
                        if name.endswith(("._mean", "._variance"))})
+        arrays.update(probes)
     for handle in handles:
         handle.remove()
     output.mkdir(parents=True, exist_ok=False)
-    archive = output / "real_parity.npz"
+    archive = output / "real_operator_parity.npz"
     np.savez_compressed(archive, **arrays)
     metadata = {"commit": PIN, "paddle": paddle.__version__, "device": args.device,
                 "fixture_sha256": sha256(archive), "samples": samples,

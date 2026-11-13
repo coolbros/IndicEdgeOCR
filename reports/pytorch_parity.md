@@ -16,6 +16,23 @@ PyTorch 2.9.1 CPU FP32 compared with the existing Paddle 3.2.0 T4 archive `d07c2
 
 The original training archive used stochastic dropout. The new controlled capture uses real training words with dropout disabled and BatchNorm in training mode. It captures both RepDWConv branches, the pre-BN sum, CTC and NRTR intermediates and losses, and BatchNorm running state. The machine-readable report contains per-layer shape, dtype, maximum and mean error, relative L2, cosine similarity and element pass counts.
 
+## Real-data CPU FP32
+
+On Kaggle Linux, Paddle 3.2.0 and PyTorch 2.9.1+cpu used identical input and label arrays from four official HierText training images. Independent preprocessing and label encoding matched bit for bit. All 122 BN running buffers and all three loss comparisons passed. The four inference strings agreed exactly (maximum confidence difference 5.96e-8). Under the activation and logit thresholds above, 555 of 980 total comparisons passed in the initial controlled run. [Kaggle version 2](https://www.kaggle.com/code/agastyavar/indic-edge-ocr-phase23/versions/2).
+
+| CPU FP32 output | Maximum absolute error | Mean absolute error | Relative L2 | Passed elements |
+|---|---:|---:|---:|---:|
+| Train NRTR memory projection | 1.841e-4 | 2.292e-6 | 5.929e-6 | 81,792 / 81,920 |
+| Train CTC logits | 3.877e-4 | 1.363e-5 | 8.277e-6 | 2,977,478 / 2,993,600 |
+| Train NRTR logits | 3.999e-3 | 1.986e-5 | 1.615e-4 | 477,953 / 523,992 |
+| CTC loss | 4.926e-4 | 4.926e-4 | 8.823e-5 | 1 / 1 |
+| NRTR loss | 5.054e-5 | 5.054e-5 | 5.507e-6 | 1 / 1 |
+| Total loss | 4.425e-4 | 4.425e-4 | 2.998e-5 | 1 / 1 |
+
+The embedding and sinusoidal outputs are exact. The first decoder block's self-attention and first normalization match, while the memory projection already has outliers. Error grows across cross-attention and subsequent normalization. The first training stem also has small floating-point differences. These results establish checkpoint identity and parity for the listed inputs, losses and decodes. Strict activation and logit parity remains open.
+
+The v2 real-data archive SHA-256 is `22455e61a913c09baf50465303b8c60f6f916d68d5d13704fc72af314a729285`. The original Phase 1 fixture uses a different output directory and checksum.
+
 ## Operator semantics
 
 - The native inference path keeps the checkpoint's unfused RepDWConv. Explicit reparameterization folds both BN layers, the identity, and the 1×1 branch. SAME padding adds one bottom and right cell for the even stem operators, with zero for convolution and negative infinity for max pooling.

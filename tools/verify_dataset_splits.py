@@ -25,12 +25,14 @@ def audit(manifests, root, threshold=4):
     if not 0 <= threshold <= 7:
         raise ValueError("Near-duplicate threshold must be in [0, 7]")
     root = root.resolve()
-    seen_ids, seen_hashes, groups = {}, {}, {}
+    seen_ids, seen_hashes, source_hashes, groups = {}, {}, {}, {}
     hashes, buckets = {}, defaultdict(list)
     errors, near = [], []
     counts, missing_groups = Counter(), Counter()
     files = {}
     for manifest in manifests:
+        if manifest.name in files:
+            errors.append(f"Duplicate manifest basename: {manifest.name}")
         raw = manifest.read_bytes()
         files[manifest.name] = hashlib.sha256(raw).hexdigest()
         for line_number, line in enumerate(raw.splitlines(), 1):
@@ -61,6 +63,11 @@ def audit(manifests, root, threshold=4):
                 if sha in seen_hashes and seen_hashes[sha][0] != split:
                     errors.append(f"{loc}: cross-split exact image {sample_id} / {seen_hashes[sha][1]}")
                 seen_hashes[sha] = (split, sample_id)
+                source_sha = row.get("source_image_sha256")
+                if source_sha is not None:
+                    if source_sha in source_hashes and source_hashes[source_sha] != split:
+                        errors.append(f"{loc}: cross-split exact source image {sample_id}")
+                    source_hashes[source_sha] = split
                 document = row.get("source_document_id")
                 if document is not None:
                     if not isinstance(document, str) or not document.strip():
@@ -72,7 +79,7 @@ def audit(manifests, root, threshold=4):
                 else:
                     missing_groups[split] += 1
                 fingerprint = dhash(image)
-                # A distance of at most four implies a shared byte in this index.
+                # At most seven changed bits leave at least one byte unchanged.
                 bands = [(i, (fingerprint >> (8 * i)) & 255) for i in range(8)]
                 candidates = {j for band in bands for j in buckets[band]}
                 for other in sorted(candidates):
@@ -87,6 +94,8 @@ def audit(manifests, root, threshold=4):
                     buckets[band].append(index)
             except (OSError, ValueError, TypeError, AttributeError, cv2.error) as exc:
                 errors.append(f"{loc}: {exc}")
+    if not counts:
+        errors.append("No records were audited")
     return {"counts": dict(counts), "missing_source_groups": dict(missing_groups),
             "manifest_sha256": files, "near_duplicate_threshold": threshold,
             "near_duplicates": near, "errors": errors, "passed": not errors and not near}

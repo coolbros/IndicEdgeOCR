@@ -41,3 +41,39 @@ python -m unittest discover -s tests
 ```
 
 For local CUDA execution, use Paddle's GPU wheel and pass `--device gpu:0`. [PaddlePaddle installation](https://www.paddleocr.ai/main/en/version3.x/paddlepaddle_installation.html).
+
+## Phase 2/3
+
+- [Checkpoint conversion and parity results](reports/pytorch_parity.md)
+- [Dataset provenance and preparation](reports/dataset_provenance.md)
+- [Split audit and manifest hashes](reports/data_leakage_audit.md)
+
+Install `requirements-torch.txt` in an isolated Python 3.12 environment and set
+`PYTHONPATH=src`. The parity report includes exact local conversion and comparison
+commands. Dataset preparation downloads the official partitions, creates a new
+subset directory, and records split and crop checksums.
+
+```bash
+python tools/prepare_kaggle_phase23.py --owner YOUR_KAGGLE_USERNAME \
+  --audit artifacts/hiertext/subset/audit.json --directory artifacts/kaggle-phase23 --smoke
+kaggle kernels push -p artifacts/kaggle-phase23 --accelerator NvidiaTeslaT4 --timeout 2100
+kaggle kernels status YOUR_KAGGLE_USERNAME/indic-edge-ocr-phase23
+kaggle kernels output YOUR_KAGGLE_USERNAME/indic-edge-ocr-phase23 -p artifacts/phase23-kaggle
+```
+
+The private job rebuilds and verifies the input manifests and runs an isolated
+CPU FP32 comparison. It records differences in JSON. With `--smoke`, it runs
+Accelerate on one CUDA device, saves `latest` and validation-selected `best`
+with SHA-256 metadata, and starts a new process to resume `latest`. Deterministic
+preprocessed inputs are cached by image digest. The smoke job uses a fixed batch
+without image augmentation.
+
+Run held-out evaluation as a separate command after freezing model selection.
+
+```bash
+PYTHONPATH=src python tools/evaluate_heldout.py \
+  --dataset artifacts/hiertext/subset \
+  --dictionary references/PaddleOCR/ppocr/utils/dict/ppocrv6_dict.txt \
+  --checkpoint artifacts/phase23-kaggle/smoke/best.pt \
+  --output artifacts/heldout.json
+```

@@ -46,3 +46,11 @@ The pinned Paddle CPU LayerNorm backward applies the learned scale to the input-
 The severe CPU results above are valid observations of the selected-gradient API, which leaves LayerNorm scales outside the requested gradients. The result cannot be attributed to ordinary training backward. The revised harness requests all relevant LayerNorm scale gradients as well. The dedicated decoder probe can be reproduced with `--device cpu --decoder-only` on the staging command. [Matched-memory decoder run](https://www.kaggle.com/code/agastyavar/indic-edge-ocr-phase36-cpu-decoder/versions/3).
 
 The matched-decoder metrics JSON SHA-256 is `1640d61e3091a8c23fab544b6745e63d504dfd1d6878fafa5acd517366714140`. The corresponding Paddle capture SHA-256 is `3f040fe3a77c6c455619cdc7bea67ca04ef176e98b02dd099408d59140bff5e3`.
+
+## Corrected CPU backward and sequential loss ablation
+
+The corrected CPU rerun includes all LayerNorm scales when requesting gradients. Full-graph image-gradient maximum error falls from 8.246e6 in the original partial-gradient experiment to 1.095, with relative L2 8.467e-3 and cosine 0.9999966. NRTR memory-gradient maximum error falls from 5.343e3 to 6.922e-4, with relative L2 9.562e-3 and cosine 0.9999853. First-block cross-attention KV weight maximum error falls to 1.668e-2, with relative L2 1.151e-2. All originally selected CPU gradient rows still have at least one strict elementwise outlier. [Corrected CPU run](https://www.kaggle.com/code/agastyavar/indic-edge-ocr-phase36-cpu/versions/2).
+
+The same rerun includes sequential reduction in the actual losses. It makes fixed-logit CTC loss exactly match Paddle on this fixture, compared with 5.970e-4 absolute error with native Torch in that run. CTC gradient maximum error increases from 8.585e-5 to 8.918e-5, and the gradient retains 12 outliers. For fixed-logit NRTR, sequential reduction increases scalar loss error from 6.866e-5 to 8.392e-5 and logit-gradient maximum error from 1.766e-5 to 2.059e-5. This supports leaving the fast native implementation as the default.
+
+The corrected CPU metrics JSON SHA-256 is `981643b0995ab92b9a6a78c367369bd993d8f646b83b94aceda65ac873d581a3` and the reference NPZ SHA-256 is `5bdbde0aee6401246f09a0423ab8c806ff364a5ce868bca3fbd15a708933b4e2`.

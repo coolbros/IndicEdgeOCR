@@ -37,3 +37,5 @@ The repeated CPU job measured the following warmed no-grad forward medians over 
 |---|---:|---:|---:|---:|
 | CTC | 3.29 ms | 5.43 ms | 9.17 ms | 151.21 ms |
 | NRTR | 0.47 ms | 0.68 ms | 1.65 ms | 139.49 ms |
+
+Sequential accumulation also closes the scalar fixed-logit CTC loss on the corrected CPU rerun. The actual CTC logit gradient still fails and its maximum error increases. The NRTR ablation worsens both fixed-logit error metrics. See [corrected loss ablations](phase36_gradient_parity.md).

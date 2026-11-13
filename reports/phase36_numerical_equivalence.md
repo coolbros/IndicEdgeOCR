@@ -132,3 +132,11 @@ Model timings cover synchronized forward execution after warmup, with up to 16 c
 | Paddle predictions JSON | `6759a16ab0bf545bc2f9ce43de2fbdb76589b8f58bd63fcda5c4ee815e38affa` |
 | PyTorch predictions JSON | `230b6428d8ae80883edc842d2567c32d14a0220fbf74d92c3a18dca0e85c8f3d` |
 | Validation leakage audit JSON | `fc3d64372a67bb18e4ba03ad98f6fd7dbfa5e7a281bcfce35d6cbf9f7e5a7ab8` |
+
+## Status and next experiment
+
+- Structural reproduction retains exact correspondence for all 441 checkpoint tensors.
+- Strict forward parity improves materially on T4, with remaining natural activation and logit misses. On CPU, exact late-stage feature injection closes both heads' logit misses, and disabling MKLDNN closes one local composed stem miss. The broader composed CPU backbone misses remain.
+- Strict full-graph gradient parity remains open. The unusually large CPU discrepancy was traced to Paddle's selected-gradient LayerNorm behavior. Requesting the scales removes that measurement distortion, and the corrected CPU and original CUDA gradients still have strict outliers. See [gradient results](phase36_gradient_parity.md).
+- The recognizers have identical decoded text on the audited T4 validation subset. The complementary CPU validation run did not return a paired result. Its Kaggle status is `CANCEL_ACKNOWLEDGED`. The CPU tensor parity results are complete and independent of that run.
+- The next parity experiment should inject identical per-head features and identical head upstream gradients in a full-backward capture, then trace the remaining differences from the CTC projection and NRTR cross-attention back into the backbone. Phases 2/3 retain their open strict-parity status.

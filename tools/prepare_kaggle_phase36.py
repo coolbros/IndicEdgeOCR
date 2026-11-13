@@ -11,12 +11,9 @@ from prepare_kaggle_reference import RUNNER
 
 SETUP = RUN.split('run(python, "tools/capture_paddle_parity.py"')[0]
 GPU_SETUP = RUNNER[RUNNER.index('wheel = '):RUNNER.index('run("git", "init"')]
-EXPERIMENTS = """
+RUNTIMES = """
 import shutil
-prior = next(Path("/kaggle/input").rglob("real_parity.npz"))
-common = ["--archive", prior, "--original", weights, "--checkpoint",
-          "converted.safetensors", "--dataset", "subset", "--source", "PaddleOCR"]
-for device in DEVICES:
+def runtime(device):
     if device == "gpu":
         from concurrent.futures import ThreadPoolExecutor
         run("uv", "venv", "--managed-python", "--python", "3.12.10", ".paddle-gpu")
@@ -24,9 +21,8 @@ for device in DEVICES:
         paddle_python = work / ".paddle-gpu/bin/python"
         torch_python = work / ".torch-gpu/bin/python"
         run("uv", "pip", "install", "--python", paddle_python, "-r", "requirements-paddle.txt")
-        uv = "uv"
-        python = paddle_python
-        exec(GPU_SETUP)
+        exec(GPU_SETUP, dict(globals(), uv="uv", python=paddle_python,
+                             ThreadPoolExecutor=ThreadPoolExecutor))
         run("uv", "pip", "install", "--python", torch_python, "--index",
             "https://download.pytorch.org/whl/cu126", "torch==2.9.1+cu126",
             "numpy==1.26.4", "opencv-python-headless==4.11.0.86", "safetensors==0.8.0")
@@ -40,6 +36,16 @@ for device in DEVICES:
         (Path(paddle_site) / "cpu-torch.pth").write_text(cpu_torch_site + "\\n")
     else:
         paddle_python = torch_python = cpu_python
+    return paddle_python, torch_python
+"""
+
+EXPERIMENTS = """
+prior = next(p for p in Path("/kaggle/input").rglob("real_parity.npz")
+             if p.with_name("manifest.json").is_file())
+common = ["--archive", prior, "--original", weights, "--checkpoint",
+          "converted.safetensors", "--dataset", "subset", "--source", "PaddleOCR"]
+for device in DEVICES:
+    paddle_python, torch_python = runtime(device)
     p = output / f"paddle-{device}"
     run(paddle_python, "tools/phase36_experiment.py", "paddle", device, *common, "--output", p)
     run(torch_python, "tools/phase36_experiment.py", "torch", device, *common,
@@ -53,9 +59,10 @@ data = output / "validation"
 run(cpu_python, "tools/phase36_evaluate.py", "prepare", "--annotations", "raw/validation.jsonl.gz",
     "--prefix", "raw/validation.prefix", "--dataset", "subset", "--output", data,
     "--retrieved-on", RETRIEVAL)
-for framework in ("paddle", "torch"):
-    run(cpu_python, "tools/phase36_evaluate.py", "evaluate", "--framework", framework,
-        "--device", "cpu", "--dataset", data, "--original", weights,
+device = DEVICES[0]
+for framework, interpreter in zip(("paddle", "torch"), runtime(device)):
+    run(interpreter, "tools/phase36_evaluate.py", "evaluate", "--framework", framework,
+        "--device", device, "--dataset", data, "--original", weights,
         "--checkpoint", "converted.safetensors", "--source", "PaddleOCR",
         "--output", output / f"predictions-{framework}.json")
 run(cpu_python, "tools/phase36_evaluate.py", "compare", "--paddle", output / "predictions-paddle.json",
@@ -71,6 +78,7 @@ def main():
     parser.add_argument("--reference", required=True)
     parser.add_argument("--device", choices=("cpu", "gpu", "both"), default="both")
     parser.add_argument("--evaluation", action="store_true")
+    parser.add_argument("--decoder-only", action="store_true")
     args = parser.parse_args()
     stage(args.owner, args.directory, args.audit, False)
     path = args.directory / "phase23.py"
@@ -83,22 +91,29 @@ def main():
                  ROOT / "tools/phase36_evaluate.py"):
         files[file.relative_to(ROOT).as_posix()] = file.read_text(encoding="utf-8")
     devices = ("cpu", "gpu") if args.device == "both" else (args.device,)
+    if args.evaluation:
+        devices = ("gpu",) if args.device == "gpu" else ("cpu",)
     script = (header + f"\nFILES = {files!r}\nDEVICES = {devices!r}\nGPU_SETUP = {GPU_SETUP!r}\n"
               + SETUP + '\ncpu_python = python\nos.environ.update(FLAGS_cudnn_deterministic="1", '
               'FLAGS_use_tf32="0", NVIDIA_TF32_OVERRIDE="0", CUBLAS_WORKSPACE_CONFIG=":4096:8")\n'
-              + (EVALUATION if args.evaluation else EXPERIMENTS))
-    if args.evaluation:
+              + RUNTIMES + (EVALUATION if args.evaluation else EXPERIMENTS))
+    if "gpu" not in devices:
         script = script.replace('run("nvidia-smi", "-L")\n', "")
-    elif args.device == "cpu":
-        script = script.replace('run("nvidia-smi", "-L")\n', "")
+    if args.decoder_only:
+        script = script.replace('common = ["--archive", prior',
+                                'common = ["--decoder-only", "--archive", prior')
     (args.directory / "phase36.py").write_text(script, encoding="utf-8")
     path.unlink()
     metadata_path = args.directory / "kernel-metadata.json"
     metadata = json.loads(metadata_path.read_text())
     suffix = "eval" if args.evaluation else args.device
+    if args.evaluation and devices == ("gpu",):
+        suffix += "-gpu"
+    if args.decoder_only:
+        suffix += "-decoder"
     metadata.update(id=f"{args.owner}/indic-edge-ocr-phase36-{suffix}",
                     title=f"Indic Edge OCR Phase36 {suffix}", code_file="phase36.py",
-                    enable_gpu=not args.evaluation and args.device != "cpu",
+                    enable_gpu="gpu" in devices,
                     kernel_sources=[] if args.evaluation else [args.reference])
     metadata_path.write_text(json.dumps(metadata, indent=2))
 

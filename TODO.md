@@ -12,3 +12,5 @@
 - [x] Verify the FP16 Kaggle training smoke test and checkpoint resume on one T4.
 - [x] Reproduce the v4 FP32 baseline and isolate stem, backbone and NRTR error propagation with paired replays.
 - [x] Stage Phase 3.6 paired CPU/CUDA forward and backward experiments and an audited 1,080-crop HierText validation subset.
+- [x] Run paired FP32 CPU and T4 comparisons and localize the large CPU selected-gradient divergence to Paddle's LayerNorm backward.
+- [x] Compare both frozen checkpoints on 1,080 official HierText validation crops on a T4.

@@ -161,7 +161,7 @@ def evaluate(args):
         for _ in range(3):
             backend.model(warmup)
         backend.sync()
-        for group in batches:
+        for index, group in enumerate(batches, 1):
             array = np.stack([values for _, values in group])
             input_digests.append(hashlib.sha256(array.tobytes()).hexdigest())
             x = backend.tensor(array)
@@ -175,6 +175,8 @@ def evaluate(args):
                 predictions.append({"id": row["sample_id"], "source": row["source_document_id"],
                                     "reference": row["transcription"], "text": text,
                                     "confidence": confidence, "handwritten": row["handwritten"]})
+            if index % 20 == 0 or index == len(batches):
+                print(f"{args.framework}: {len(predictions)}/{len(rows)} crops", flush=True)
     write_json(args.output, {"runtime": backend.versions(), "manifest_sha256": digest(manifest),
                              "preprocess_ms": preprocessing * 1000,
                              "batch_latency_ms": [x * 1000 for x in durations],

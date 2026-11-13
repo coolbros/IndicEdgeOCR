@@ -20,8 +20,11 @@ class PaddleLogSoftmaxTest(unittest.TestCase):
         x = torch.tensor([[700., 699., 636.01, 635.99]], dtype=torch.float64,
                          requires_grad=True)
         y = paddle_compatible_log_softmax(x)
-        self.assertEqual((y[0, 2] - y[0, 3]).item(), 0.009999999999990905)
-        self.assertTrue(torch.autograd.gradcheck(paddle_compatible_log_softmax, (x,)))
+        self.assertAlmostEqual((y[0, 2] - y[0, 3]).item(), 0.01, places=12)
+        for implementation in ("torch", "pairwise", "sequential"):
+            self.assertTrue(torch.autograd.gradcheck(
+                lambda values: paddle_compatible_log_softmax(values, implementation=implementation), (x,),
+            ))
 
     def test_loss_selection_round_trips_and_backpropagates(self):
         config = json.loads(json.dumps({"ctc_log_softmax": "torch",

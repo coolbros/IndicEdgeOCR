@@ -164,6 +164,8 @@ class Backend:
         for layer in self.named.values():
             if isinstance(layer, self.fw.nn.Dropout):
                 layer.eval()
+            if type(layer).__name__ in ("BatchNorm", "BatchNorm2D", "BatchNorm2d") and layer.training != train:
+                raise RuntimeError("Unexpected BatchNorm mode")
 
     def tensor(self, data, grad=False):
         if self.paddle:
@@ -319,6 +321,11 @@ def experiment(backend, archive, refs, report):
             record(f"train/bn_after/{canonical}", value)
 
     params = [(key, backend.params[key]) for key in PARAMETERS]
+    # Paddle 3.2 CPU LayerNormGrad gates application of gamma to dX on
+    # whether dScale is requested. Include each scale to measure training backward.
+    norm_scales = [(f"layer_norm_scale/{name}", layer.weight)
+                   for name, layer in backend.named.items()
+                   if isinstance(layer, backend.fw.nn.LayerNorm)]
     groups = {
         "CTCLoss": [("logits", outputs["ctc"]), ("features", captured[FEATURES[0]]),
                     *[(k, v) for k, v in params if k.startswith("head.ctc_head")]],
@@ -328,6 +335,8 @@ def experiment(backend, archive, refs, report):
     }
     settings = (("native", "native"),) if backend.paddle else (
         ("native", "native"), ("torch", "native"), ("native", "torch"), ("native", "pairwise"))
+    if not backend.paddle and backend.device == "cpu":
+        settings += (("sequential", "native"), ("native", "sequential"))
     for index, (ctc, nrtr) in enumerate(settings):
         prefix = f"full/{ctc}-{nrtr}"
         losses = backend.losses(outputs, batch, ctc, nrtr)
@@ -340,7 +349,13 @@ def experiment(backend, archive, refs, report):
                 report[key] = metrics(refs[source], backend.array(losses[loss_name]), "loss")
                 report[key].update(paddle_value=float(refs[source]),
                                    torch_value=float(backend.array(losses[loss_name])))
-            gradients(key, losses[loss_name], pairs,
+            if loss_name == "CTCLoss":
+                scales = [(k, v) for k, v in norm_scales if "/head.ctc_encoder." in k]
+            elif loss_name == "NRTRLoss":
+                scales = [(k, v) for k, v in norm_scales if "/head.gtc_head." in k]
+            else:
+                scales = norm_scales
+            gradients(key, losses[loss_name], pairs + scales,
                       retain=index != len(settings) - 1 or loss_name != "loss",
                       reference_prefix=None if backend.paddle else source)
 
@@ -382,6 +397,63 @@ def experiment(backend, archive, refs, report):
                         "logits" if key.endswith("logits") else "activation")
 
 
+def fixed_memory_backward(backend, archive, refs, report):
+    """Backpropagate through both decoders from identical memory and upstream gradients."""
+    backend.reset(True)
+    rng = np.random.default_rng(736)
+    norm = backend.named["head.gtc_head.decoder.3.norm3"]
+    x = backend.tensor(rng.standard_normal((2, 3, 512), dtype=np.float32), True)
+    dy = backend.tensor(rng.standard_normal((2, 3, 512), dtype=np.float32))
+    result = norm(x)
+    for include_weight in (False, True):
+        targets = [x, norm.weight] if include_weight else [x]
+        actual = backend.array(backend.grad(result, targets, dy, retain=not include_weight)[0])
+        key = f"isolated_layer_norm/grad/request_weight={include_weight}"
+        if backend.paddle:
+            refs[key] = actual
+        else:
+            report[key] = metrics(refs[key], actual, "activation")
+    memory = backend.tensor(archive["train/head.before_gtc"], True)
+    tokens = backend.tensor(archive["train/label_gtc"])
+    lengths = backend.tensor(archive["train/length"])
+    head = backend.model.head.gtc_head
+    observed = {}
+    handles = []
+    for name, layer in backend.named.items():
+        if name.startswith("head.gtc_head.decoder.") and name.rsplit(".", 1)[-1] in (
+            "norm1", "norm2", "norm3", "self_attn", "cross_attn", "mlp",
+        ):
+            def save(_layer, _inputs, value, key=name):
+                if isinstance(value, backend.fw.Tensor):
+                    observed[key] = value
+            hook = layer.register_forward_post_hook if backend.paddle else layer.register_forward_hook
+            handles.append(hook(save))
+    try:
+        logits = head(memory, (tokens, lengths)) if backend.paddle else head(memory, tokens, lengths)
+    finally:
+        for handle in handles:
+            handle.remove()
+    observed["memory"] = memory
+    upstream = rng.standard_normal(list(logits.shape), dtype=np.float32) * np.float32(1e-4)
+    names = sorted(observed)
+    norm_weights = [value for name, value in backend.params.items()
+                    if name.startswith("head.gtc_head.decoder.") and ".norm" in name]
+    for include_norm_weights in (False, True):
+        targets = [observed[name] for name in names]
+        if include_norm_weights:
+            targets += norm_weights
+        gradients = backend.grad(logits, targets, backend.tensor(upstream),
+                                 retain=not include_norm_weights)
+        mode = "with_norm_parameters" if include_norm_weights else "activations_only"
+        for name, gradient in zip(names, gradients):
+            key = f"fixed_memory/{mode}/grad/{name}"
+            actual = backend.array(gradient)
+            if backend.paddle:
+                refs[key] = actual
+            else:
+                report[key] = metrics(refs[key], actual, "activation")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("framework", choices=("paddle", "torch"))
@@ -389,6 +461,7 @@ def main():
     for name in ("source", "archive", "original", "checkpoint", "dataset", "output"):
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--reference", type=Path)
+    parser.add_argument("--decoder-only", action="store_true")
     args = parser.parse_args()
     for key, expected in BASELINE.items():
         path = args.dataset / "train.jsonl" if key == "train_manifest" else getattr(args, key)
@@ -401,9 +474,11 @@ def main():
     with np.load(args.archive, allow_pickle=False) as archive:
         if backend.paddle:
             refs = {}
-            if args.device == "cpu":
+            if args.device == "cpu" and not args.decoder_only:
                 log_probes(backend, archive, refs, report)
-            experiment(backend, archive, refs, report)
+            if not args.decoder_only:
+                experiment(backend, archive, refs, report)
+            fixed_memory_backward(backend, archive, refs, report)
             output = args.output / "reference.npz"
             np.savez_compressed(output, **refs)
             report["reference_sha256"] = digest(output)
@@ -413,10 +488,12 @@ def main():
                     or digest(args.reference) != metadata["metrics"]["reference_sha256"]):
                 raise ValueError("Paddle reference digest mismatch")
             with np.load(args.reference, allow_pickle=False) as refs:
-                if args.device == "cpu":
+                if args.device == "cpu" and not args.decoder_only:
                     log_probes(backend, archive, refs, report)
                     gc.collect()
-                experiment(backend, archive, refs, report)
+                if not args.decoder_only:
+                    experiment(backend, archive, refs, report)
+                fixed_memory_backward(backend, archive, refs, report)
     (args.output / "results.json").write_text(json.dumps({
         "inputs": BASELINE, "runtime": backend.versions(), "metrics": report,
     }, indent=2, allow_nan=False), encoding="utf-8")

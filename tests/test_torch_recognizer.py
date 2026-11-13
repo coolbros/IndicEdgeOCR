@@ -16,8 +16,10 @@ class RecognizerTest(unittest.TestCase):
         targets = torch.tensor([[2, 7, 3, 0], [2, 9, 8, 3]])
         with torch.no_grad():
             train = model(images, (None, targets, torch.tensor([1, 2]), None))
+            second = model(images, (None, targets, torch.tensor([1, 2]), None))
             self.assertEqual(train["ctc"].shape, (2, 40, 18710))
             self.assertEqual(train["gtc"].shape, (2, 3, 18714))
+            self.assertFalse(torch.equal(train["gtc"], second["gtc"]))
             model.eval()
             probabilities = model(images)
             torch.testing.assert_close(probabilities.sum(-1), torch.ones(2, 40))

@@ -33,6 +33,27 @@ The embedding and sinusoidal outputs are exact. The first decoder block's self-a
 
 The v2 real-data archive SHA-256 is `22455e61a913c09baf50465303b8c60f6f916d68d5d13704fc72af314a729285`. The original Phase 1 fixture uses a different output directory and checksum.
 
+The follow-up replayed ten operators with exact Paddle inputs and the same declared tolerances. All ten passed and the end-to-end comparison had 565 passes out of 990 checks. The isolated NRTR LayerNorm probes passed with maximum differences ≤1.91e-6. A full graph discrepancy remains even when individual probes pass, so the next investigation should trace cumulative stem/backbone error into decoder cross-attention with paired intermediate replays. The v4 archive SHA-256 is `e861cbf75fe498d05e4edc0fa568a09cabe88f6224b2e38427ee557df65af8fc`. [Kaggle version 4](https://www.kaggle.com/code/agastyavar/indic-edge-ocr-phase23/versions/4).
+
+| Identical-input CPU probe | Max absolute error | Result |
+|---|---:|---|
+| Stem 3×3 convolution | 1.58e-6 | Pass |
+| Even-kernel SAME convolution | 9.54e-6 | Pass |
+| SAME max pooling | 0 | Pass |
+| Unfused RepDWConv | 5.36e-6 | Pass |
+| Exact GELU | 9.37e-7 | Pass |
+| LightSVTR local path | 4.77e-7 | Pass |
+| LightSVTR global mixer | 8.94e-8 | Pass |
+| NRTR block 0 cross-attention LayerNorm | 4.77e-7 | Pass |
+| NRTR block 0 final LayerNorm | 7.15e-7 | Pass |
+| NRTR block 3 final LayerNorm | 1.91e-6 | Pass |
+
+## Training persistence and resume
+
+Accelerate 1.15.0 ran FP16 on one Tesla T4 with PyTorch 2.9.1+cu126 and CUDA 12.6. The original scaler setting of 128 caused an overflow. The retry started at scale 1 with dynamic backoff. The successful run used four distinct, audited HierText training crops and completed four optimizer updates across two epochs, resuming in a new process at epoch 1 and global step 2. The final optimizer had 318 state entries and the scheduler reached step 4. All updates reported finite nonzero gradient norms for the stem, CTC projection and NRTR projection. The first and fourth training losses were 8.821903 and 1.590969.
+
+The final GPU `latest.pt` SHA-256 is `814061c32ab1609bb301fad37a7633c501ab998e5a216f6abbe5bc6904438ac4`. The validation-selected `best.pt` SHA-256 is `eaba545022d12a66efeb10e3f339ce08d32a50dce7027674f1071fd9a95ed6e7`. The smoke val set has four samples. The separate held-out evaluator was exercised on the frozen CPU smoke checkpoint with four test samples. Those results assess the pipeline wiring only. [Private Kaggle outputs](https://www.kaggle.com/code/agastyavar/indic-edge-ocr-phase23/versions/4).
+
 ## Operator semantics
 
 - The native inference path keeps the checkpoint's unfused RepDWConv. Explicit reparameterization folds both BN layers, the identity, and the 1×1 branch. SAME padding adds one bottom and right cell for the even stem operators, with zero for convolution and negative infinity for max pooling.

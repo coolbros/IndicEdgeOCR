@@ -9,4 +9,4 @@
 - [x] Verify HierText provenance, official partition isolation, and smoke-manifest checksums.
 - [x] Verify real-data Accelerate training and checkpoint resume on CPU.
 - [ ] Close the remaining FP32 activation and logit parity failures before marking Phases 2/3 complete.
-- [ ] Verify the FP16 Kaggle training smoke test and checkpoint resume.
+- [x] Verify the FP16 Kaggle training smoke test and checkpoint resume on one T4.

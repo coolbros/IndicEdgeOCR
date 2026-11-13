@@ -2,6 +2,8 @@
 
 The reference is PaddleOCR commit `dab3fe35379033fdcb2d0e9572fac0b36c9a9ebf`, using `configs/rec/PP-OCRv6/PP-OCRv6_medium_rec.yml` and the training-form checkpoint. The [technical report](https://arxiv.org/html/2606.13108v1) describes LCNetV4 in §2.1, LightSVTR and CTC+NRTR in §2.3, language coverage in Appendix A, and recognition ablations in Appendix C.3. The published 83.2% weighted recognition accuracy comes from an in-house benchmark.
 
+The 29-page [official PDF](https://arxiv.org/pdf/2606.13108) is stored locally in `references/PP-OCRv6.pdf` with SHA-256 `9e751424f9bcf30ea04e4bd2654a11cc4455dd4e218e743a31db1468e9d6e89a`.
+
 ## Execution graph
 
 ```mermaid

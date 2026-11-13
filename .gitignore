@@ -1,0 +1,8 @@
+/.uv-cache/
+/.venv-paddle/
+/references/PaddleOCR/
+/references/PP-OCRv6.pdf*
+/references/samples/
+/weights/
+/artifacts/
+__pycache__/

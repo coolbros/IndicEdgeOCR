@@ -3,6 +3,7 @@
 Faithful reproduction of the official PP-OCRv6 medium recognizer, starting with an architecture audit and executable Paddle baseline.
 
 - [Architecture and operator audit](reports/architecture_audit.md)
+- [Verified Paddle baseline](reports/paddle_reference.md)
 - [Phase checklist](TODO.md)
 
 ## Kaggle Paddle reference

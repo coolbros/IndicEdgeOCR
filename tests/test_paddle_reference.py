@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,8 +16,15 @@ class PaddleReferenceArtifactsTest(unittest.TestCase):
         self.assertEqual(info["checkpoint"]["missing"], [])
         self.assertEqual(info["checkpoint"]["unexpected"], [])
         self.assertEqual(info["checkpoint"]["mismatched"], [])
+        self.assertEqual(info["checkpoint"]["tensors"], 441)
+        self.assertEqual(info["layers"]["<model>"]["trainable"], 55_527_798)
+        self.assertEqual(info["layers"]["backbone"]["trainable"], 14_356_768)
+        self.assertEqual(info["layers"]["head.ctc_encoder"]["trainable"], 1_187_520)
         self.assertEqual(info["samples"]["official"]["text"], "绿洲仕格维花园公寓")
         self.assertGreaterEqual(len(info["samples"]), 3)
+        with (root / "reference.npz").open("rb") as archive:
+            self.assertEqual(hashlib.file_digest(archive, "sha256").hexdigest(),
+                             info["fixture_sha256"])
         with np.load(root / "reference.npz", allow_pickle=False) as arrays:
             self.assertEqual(arrays["train/input"].shape, (2, 3, 48, 320))
             self.assertEqual(arrays["train/ctc_logits"].shape, (2, 40, 18710))

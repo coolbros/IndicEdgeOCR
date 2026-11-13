@@ -12,4 +12,5 @@ pyclipper
 tqdm
 requests
 packaging
+setuptools
 visualdl

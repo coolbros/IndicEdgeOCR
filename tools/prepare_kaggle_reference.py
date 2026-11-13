@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = """
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import shutil
@@ -37,7 +38,29 @@ if uv is None:
     uv = work / "uv-x86_64-unknown-linux-gnu" / "uv"
 run(uv, "venv", "--managed-python", "--python", "3.12.10", venv)
 run(uv, "pip", "install", "--python", python, "-r", work / "requirements-paddle.txt")
-run(uv, "pip", "install", "--python", python, "paddlepaddle-gpu==3.2.0",
+wheel = "paddlepaddle_gpu-3.2.0-cp312-cp312-linux_x86_64.whl"
+wheel_origin = "https://paddle-whl.bj.bcebos.com/stable/cu126/paddlepaddle-gpu"
+wheel_size = 1_890_365_820
+chunk_size = 64 * 1024 * 1024
+
+def fetch_part(start):
+    stop = min(start + chunk_size, wheel_size) - 1
+    part = work / f"paddle-{start:012d}.part"
+    run("curl", "-fsSL", "--retry", "3", "--max-time", "240",
+        "--range", f"{start}-{stop}", "-o", part, f"{wheel_origin}/{wheel}")
+    if part.stat().st_size != stop - start + 1:
+        raise ValueError(f"Unexpected wheel range size for {start}-{stop}")
+    print(f"Fetched Paddle wheel bytes {start}-{stop}", flush=True)
+    return part
+
+with ThreadPoolExecutor(max_workers=12) as pool:
+    parts = list(pool.map(fetch_part, range(0, wheel_size, chunk_size)))
+with (work / wheel).open("wb") as dest:
+    for part in parts:
+        with part.open("rb") as stream:
+            shutil.copyfileobj(stream, dest)
+        part.unlink()
+run(uv, "pip", "install", "--python", python, work / wheel,
     "--index", "https://www.paddlepaddle.org.cn/packages/stable/cu126/")
 run("git", "init", "PaddleOCR")
 run("git", "-C", "PaddleOCR", "fetch", "--depth", "1",

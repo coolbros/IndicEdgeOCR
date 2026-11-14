@@ -1,6 +1,7 @@
 """Fixed-dictionary recognition preprocessing and greedy decoding."""
 
 import math
+from numbers import Integral
 from pathlib import Path
 
 import cv2
@@ -58,7 +59,8 @@ class Vocabulary:
         for symbols, reserved, size in ((out.indices, {tokens.blank}, tokens.ctc_classes),
                                         (out.nrtr_indices, {tokens.pad, tokens.bos, tokens.eos}, tokens.nrtr_classes)):
             if (len(set(symbols.values())) != len(symbols) or any(len(k) != 1 for k in symbols)
-                    or any(i in reserved or not 0 <= i < size for i in symbols.values())):
+                    or any(not isinstance(i, Integral) or isinstance(i, bool) or i in reserved
+                           or not 0 <= i < size for i in symbols.values())):
                 raise ValueError("Invalid recognition class mapping")
         if set(out.indices.values()) | {tokens.blank} != set(range(tokens.ctc_classes)):
             raise ValueError("CTC mapping must cover every nonblank class")

@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,8 @@ KV = "head.gtc_head.decoder.2.cross_attn.kv"
 
 
 def run(args):
+    if (args.framework == "torch") != (args.reference is not None):
+        raise ValueError("Torch replay requires the Paddle reference directory")
     original, checkpoint = args.original.resolve(), args.checkpoint.resolve()
     if digest(original) != BASELINE["original"] or digest(checkpoint) != BASELINE["checkpoint"]:
         raise ValueError("Frozen checkpoint mismatch")
@@ -175,6 +178,8 @@ def run(args):
         np.savez_compressed(path, **captured)
     (args.output / "results.json").write_text(json.dumps({
         "runtime": b.versions(), "prior": catalog["capture_sha256"], "inputs": BASELINE,
+        "flags": {name: os.environ.get(name) for name in ("FLAGS_use_mkldnn", "FLAGS_use_tf32",
+                                                            "NVIDIA_TF32_OVERRIDE", "CUDA_VISIBLE_DEVICES")},
         "seed": 3808, "sha256": digest(path) if path.exists() else None, "rows": result,
     }, indent=2, allow_nan=False), encoding="utf8")
 

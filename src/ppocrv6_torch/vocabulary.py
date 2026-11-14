@@ -1,6 +1,7 @@
 """Recognition head dimensions and special token indices."""
 
 from dataclasses import dataclass
+from numbers import Integral
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,9 @@ class RecognitionTokens:
 
     def __post_init__(self):
         special = (self.pad, self.bos, self.eos)
+        if any(not isinstance(value, Integral) or isinstance(value, bool)
+               for value in (self.ctc_classes, self.nrtr_classes, self.blank, *special)):
+            raise ValueError("Recognition class counts and indices must be integers")
         if self.ctc_classes < 2 or not 0 <= self.blank < self.ctc_classes:
             raise ValueError("Invalid CTC class count or blank index")
         if (self.nrtr_classes < 4 or len(set(special)) != 3

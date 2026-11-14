@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from accelerate import Accelerator
 
-from ppocrv6_torch import PPOCRv6Medium
+from ppocrv6_torch import PPOCRv6Medium, RecognitionTokens
 from ppocrv6_torch.data import Vocabulary, resize_image
 from ppocrv6_torch.losses import multi_loss
 from ppocrv6_torch.train_data import augment, concatenate, multiscale_batches, scale_pairs
@@ -74,6 +74,10 @@ class Phase38TrainingTest(unittest.TestCase):
             vocab.encode("")
         with self.assertRaises(ValueError):
             vocab.encode("A" * 24)
+        with self.assertRaises(ValueError):
+            RecognitionTokens(3, 8, blank=1.0)
+        with self.assertRaises(ValueError):
+            Vocabulary.from_symbols({"A": False, "B": 2}, {"A": 1, "B": 3}, model.tokens)
 
     def test_midrun_resume_matches_uninterrupted_update(self):
         torch.manual_seed(3801)

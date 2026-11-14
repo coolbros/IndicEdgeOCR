@@ -18,3 +18,7 @@ The [fresh T4 inference comparison](https://www.kaggle.com/code/agastyavar/indic
 - The validation subset is predominantly ASCII, with 36 non-ASCII examples. It does not establish Indic accuracy or training-trajectory equivalence.
 
 The conversion and inference commands are documented in the [baseline audit and validation instructions](phase38_training_validation.md).
+
+The reproduced T4 recognition summary is SHA-256 `42d3006e50c3dd0d91481fb0389afdd4a3df74292a93f03b79924f0492de9c69`.
+
+A local Windows CPU replay of the first immutable Paddle inference crop used the configured default heads. Decoded strings match at batch sizes 1 and 4 and match the archived Paddle string. The CTC probability maximum changes by 1.192e-7 from batching and differs from Paddle by at most 1.257e-7 at batch size 1. This is a single-crop batch sensitivity check.

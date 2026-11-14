@@ -127,7 +127,11 @@ class Trace:
         return array
 
     def exact(self, key):
-        return self.reference_arrays[self.reference[key]["sha256"]]
+        sha = self.reference[key]["sha256"]
+        value = self.reference_arrays[sha]
+        if array_hash(value) != sha:
+            raise ValueError(f"Corrupt reference tensor: {key}")
+        return value
 
     def select(self, key, value, grad=False):
         array = self.exact(key) if self.reference is not None else self.b.array(value)
@@ -217,8 +221,7 @@ def hooks(backend, names):
             handle.remove()
 
 
-def mask_for(backend, sequence):
-    length = sequence.shape[1]
+def mask_for(backend, length):
     mask = np.full((length, length), -np.inf, dtype=np.float32)
     return backend.tensor(np.triu(mask, 1)[None, None])
 
@@ -395,7 +398,7 @@ def run_trace(trace, fixture):
                 (b.tensor(local_sources[HEAD+".tgt_word_prj"][0]),),
                 trace.parameters((HEAD+".tgt_word_prj",)), upstream=n_seed)
     width = local_sources[HEAD+".decoder.0"][0].shape[1]
-    causal_mask = mask_for(b, b.tensor(np.empty((1, width), "f")))
+    causal_mask = mask_for(b, width)
     for i in reversed(range(4)):
         root = f"{HEAD}.decoder.{i}"
         z = b.tensor(local_sources[root][0])
@@ -511,7 +514,9 @@ def backbone_local(trace, label, sources, seeds, pooled_seed):
     last_input = trace.native_outputs[STAGES[-1]]
     trace.probe(f"backbone/{label}/pool", lambda z: pool(z, [1, 40]),
                 (b.tensor(last_input),), upstream=b.tensor(pooled_seed))
-    for name in reversed(tuple(name for name in sources if name in seeds and name != "backbone")):
+    # Hook insertion order follows execution, including nested operator calls.
+    order = [name for name in reversed(sources) if name in seeds and name != "backbone"]
+    for name in order:
         trace.probe(f"backbone/{label}/{name}", b.named[name], (b.tensor(sources[name][0]),),
                     trace.parameters((name,)), upstream=b.tensor(seeds[name]))
 

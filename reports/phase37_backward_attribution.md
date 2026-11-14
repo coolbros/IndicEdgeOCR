@@ -38,3 +38,32 @@ For a local replay, pass identical inputs to `python tools/trace_backward.py pad
 ## Recognition scope
 
 The prior frozen recognizers agreed on all 1,080 T4 HierText validation crops. The subset includes 997 printed and 83 handwritten crops, 1,044 ASCII and 36 non-ASCII labels, from 93 source images. It favors horizontal text and early archive entries. The forward path and dictionary are unchanged, so this phase does not repeat the benchmark. See the separate [Indic evaluation corpus plan](indic_evaluation_corpus_plan.md).
+
+## T4 FP32 results
+
+The [paired T4 run](https://www.kaggle.com/code/agastyavar/indic-edge-ocr-phase37-gpu/versions/3) captured 3,787 records and 270 identical named gradient request sets in each framework. It used one visible Tesla T4, driver 580.178.04, compute capability 7.5, CUDA 12.6, Paddle 3.2.0 with cuDNN 9.5.1 and Torch 2.9.1+cu126 with cuDNN 9.10.2. The harness checked FP32 CUDA tensors and disabled TF32. Re-running the Phase 3.6 comparator gave image-gradient maximum error 0.0396423 and relative L2 3.07837e-4, the original GPU values.
+
+| T4 replay with fixed inputs and upstream coefficients | Gradient rows passing | Maximum error in input gradient |
+|---|---:|---:|
+| CTC projection | 3 / 3 | 0 |
+| NRTR pooled-map projection | 2 / 2 | 0 |
+| NRTR output projection | 2 / 2 | 0 |
+| CTC encoder | 36 / 36 | 1.788e-7 |
+| Whole NRTR decoder | 81 / 83 | 3.681e-6 |
+| Individually replayed NRTR decoder operators and blocks | 368 / 368 | See tensor metrics |
+| Backbone with CTC gradient injected at pooled feature | 185 / 199 | 7.915e-5 |
+| Backbone with NRTR gradient injected at pooled feature | 152 / 199 | 4.742e-4 |
+| Backbone with summed gradient injected at pooled feature | 154 / 199 | 4.644e-4 |
+
+On the T4 natural CTC path, a fixed logit gradient makes the projection's feature gradient byte-identical even with differing natural features. The first observed strict **stage-input** gradient failure is at the input to stage 2, after its only block in reverse order. Earlier in backward order, stage 5 already has local parameter gradient misses. In the CTC branch these include a BN scale in block 5.0. All selected block 5.2 replays pass. The measurements localize strict stage-input misses to composed block 2.0, while earlier parameter misses concern different outputs of the backward pass.
+
+On the T4 natural NRTR path, the projected-memory gradient is already outside tolerance (max 2.760e-5, 492 outliers), although the head receives the same logit derivative in both frameworks. Fixing projected memory reduces its maximum error to 3.681e-6 with zero outliers. The two remaining whole-decoder gradient misses each have one element, in the embedding weight and block 2 cross-attention KV weight. Isolated replay of the corresponding decoder KV projection passes. The full matched-memory run still has 24 forward-logit outliers. A local operator probe may pass while small differences propagate across operators. The current trace does not isolate the embedding's gather/scatter backward.
+
+Direct pooled-gradient injection cuts the T4 natural NRTR image-gradient maximum from 4.244e-2 to 4.742e-4, with relative L2 from 4.531e-4 to 4.155e-6. It leaves 151 image elements outside tolerance. The CTC backbone retains errors after the equivalent injection. This localizes most of the NRTR discrepancy upstream of the pooled backbone gradient, with a residual attributable to the backbone replay.
+
+| T4 capture | SHA-256 |
+|---|---|
+| Paddle tensor NPZ | `157fd928cc98b4b1efd9eda67f020793df62dc57225396df082978341e1624c5` |
+| Torch tensor NPZ | `84c96b741ebe5aaff16bbd44a6fc19ebaa9f52519207991ff43b4fabe557a32d` |
+| Paddle capture JSON | `4a8bef0ccab2ce5bb55ead2e6706d11834d6a88462d0935fd2c9c0db41675943` |
+| Torch comparison JSON | `268dc7b3f536445feeaa4302f994184af633195f37f167dbab9b7eea9528ce38` |

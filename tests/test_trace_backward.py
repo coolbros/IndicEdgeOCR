@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from trace_backward import gradient_metrics, unique_targets, vjp
+from trace_backward import Trace, array_hash, gradient_metrics, unique_targets, vjp
 
 
 class TraceBackwardTest(unittest.TestCase):
@@ -41,3 +41,13 @@ class TraceBackwardTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "unused_weight"):
             vjp(torch.autograd.grad, x.square(), torch.ones_like(x),
                 {"input": x, "unused_weight": weight})
+
+    def test_reference_rejects_array_with_wrong_content(self):
+        sample = np.ones((1, 3), np.float32)
+        checksum = array_hash(sample)
+        trace = Trace(None, None, {"input": {"sha256": checksum}})
+        trace.reference_arrays = {checksum: sample.copy()}
+        np.testing.assert_array_equal(trace.exact("input"), sample)
+        trace.reference_arrays[checksum][0, 0] = 0
+        with self.assertRaisesRegex(ValueError, "Corrupt reference tensor: input"):
+            trace.exact("input")

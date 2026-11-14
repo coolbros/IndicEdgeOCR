@@ -83,3 +83,10 @@ PYTHONPATH=src python tools/evaluate_heldout.py \
 - [CPU and T4 FP32 equivalence, HierText validation, and reproduction commands](reports/phase36_numerical_equivalence.md)
 - [Paddle CPU log-softmax compatibility and reduction ablations](reports/phase36_log_softmax.md)
 - [Loss and gradient comparisons, including Paddle CPU LayerNorm](reports/phase36_gradient_parity.md)
+
+## Phase 3.7
+
+- [Causal backward experiments and reproduction](reports/phase37_backward_attribution.md)
+- [LayerNorm request controls](reports/phase37_layernorm_backward.md)
+- [Gradient error and accumulation analysis](reports/phase37_gradient_error_analysis.md)
+- [Indic evaluation corpus plan](reports/indic_evaluation_corpus_plan.md)

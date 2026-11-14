@@ -9,7 +9,7 @@ Baseline `main` was clean at `b850ee7da73d180cd4296abade221d3a373cfda9`. The Pad
 | Phase 3.5 v4 fixture | `e861cbf75fe498d05e4edc0fa568a09cabe88f6224b2e38427ee557df65af8fc` |
 | Training fixture manifest | `4fc83fe5c90366051e75d2f10ef61624a68dbec3785e263a1bcd14042cdfed73` |
 | Phase 3.5 comparison JSON | `f635a681b652209c854b22b23a8e00d246cb31a511d176c331d70b562d28f28b` |
-| Phase 3.5 exact replay JSON | `3477b2b74bbaa1a0b66b6141eDE8AEA7A77116FE2B7583777E3A594038479104` |
+| Phase 3.5 exact replay JSON | `3477b2b74bbaa1a0b66b6141ede8aea7a77116fe2b7583777e3a594038479104` |
 
 The experiments use an unchanged recognizer and loss with no optimizer steps. Both engines use training mode with dropout disabled, and start from the pinned checkpoint and BN buffers. Reported BN state comes from the first native forward. The native loss comparison uses each engine's own loss derivatives. The matched comparison injects the Paddle logit gradients into both graphs. Exact local replays independently supply Paddle argument bytes and the recorded upstream coefficient. The attention primitive trace also uses a deterministic diagnostic seed (NumPy seed 3701), propagated through its scoring primitives. Capture JSON lists every named gradient requested and retains shape, dtype, layout and digest for saved tensors. Full-network calls request all connected parameters, including both LayerNorm affine gradients. Paddle Linear weight gradients are transposed to Torch layout before comparison.
 
@@ -67,3 +67,40 @@ Direct pooled-gradient injection cuts the T4 natural NRTR image-gradient maximum
 | Torch tensor NPZ | `84c96b741ebe5aaff16bbd44a6fc19ebaa9f52519207991ff43b4fabe557a32d` |
 | Paddle capture JSON | `4a8bef0ccab2ce5bb55ead2e6706d11834d6a88462d0935fd2c9c0db41675943` |
 | Torch comparison JSON | `268dc7b3f536445feeaa4302f994184af633195f37f167dbab9b7eea9528ce38` |
+
+The v3 CPU and T4 runners embedded the same experimental source, SHA-256 `554810bf8efc475b5d1042aea94c3ced83b8471df6b35749343fe49b13b8024b`. The committed source adds per-array digest verification and simplifies construction of the identical causal mask after those submissions. The captured gradients use the v3 source.
+
+The native CTC sweep requested 308 named gradients, the NRTR sweep 348, and the joint and native-loss sweeps 392 each. This includes 7 LayerNorm scale/bias pairs for CTC, 12 for NRTR, and 19 for the joint and loss sweeps. The isolated decoder requests 83 gradients, including its 12 affine pairs. Across the 270 named request sets, the harness validated 4,098 named gradient outputs in each runtime. The names include aliases for stage and block outputs and are more numerous than distinct tensor identities.
+
+## CPU FP32 results
+
+The [paired CPU run](https://www.kaggle.com/code/agastyavar/indic-edge-ocr-phase37-cpu/versions/3) used Paddle 3.2.0 and Torch 2.9.1+cpu on an Intel Xeon 2.20 GHz worker. Paddle oneDNN was disabled. Default Torch used two threads with MKLDNN enabled. Both runtimes used Python 3.12.10 and NumPy 1.26.4. The reproduced Phase 3.6 CPU image-gradient result matches the earlier maximum (1.094673), relative L2 (8.466718e-3), and cosine (0.999996615).
+
+| CPU replay with fixed inputs and upstream coefficients | Gradient rows passing | Maximum error in input gradient |
+|---|---:|---:|
+| CTC projection | 3 / 3 | 0 |
+| NRTR pooled-map projection | 2 / 2 | 0 |
+| NRTR output projection | 2 / 2 | 0 |
+| CTC encoder | 36 / 36 | 1.788e-7 |
+| Whole NRTR decoder | 83 / 83 | 1.639e-7 |
+| Individually replayed NRTR decoder operators and blocks | 368 / 368 | See tensor metrics |
+| Backbone with CTC gradient injected at pooled feature | 49 / 199 | 5.379e-4 |
+| Backbone with NRTR gradient injected at pooled feature | 23 / 199 | 1.472e-3 |
+| Backbone with summed gradient injected at pooled feature | 31 / 199 | 1.505e-3 |
+
+In the CPU natural CTC branch, the logit gradient from the actual loss already has 13 outliers. With that seed held fixed, the feature gradient is exact. The natural projection weight still has 29 outliers, all removed by fixing the input features. The encoder and its six selected local operators pass on matched inputs. Stage 5 is the first composed backbone replay in reverse order with parameter misses. Its first recorded CTC miss is a compress BN bias in block 5.0. The first strict stage-input miss is block 2.0, whose token mixer also fails when isolated. The channel mixer and the early stem are downstream in the backward trace.
+
+The CPU natural NRTR branch, with identical logit derivatives, first shows a strict gradient failure by projected memory (max 7.354e-4, 19,191 outliers). Matched memory removes those outliers and all decoder gradient misses. The natural image-gradient relative L2 is 1.221e-2 for this branch. Fixing the pooled input gradient lowers it to 1.702e-5. The remaining strict input difference is independently visible in stage 2 and its composed token mixer and RepDWConv. The tested individual RepDWConv convolutions and BNs pass for their input gradients. Consequently the trace resolves the failure to a composed boundary and cannot uniquely attribute it to a single arithmetic instruction.
+
+| CPU capture | SHA-256 |
+|---|---|
+| Paddle tensor NPZ | `1205ca14d8c01bc1126c4cc42623a6339af4edc63f33f8a1dc686748a65de0ee` |
+| Torch tensor NPZ | `5cad94b9e284bcd24f25b9db0622a6c818aaab8d316c971a70b3c8979b122aa3` |
+| Paddle capture JSON | `81753f32f4165a273d953936d858bfdbe5e9060f6a3d8d11bd02c5ee1a72d369` |
+| Torch comparison JSON | `74add540a02c644322753ee04ef774593ba688ac883a4bd6eb2a3c6d15f13334` |
+| Single-thread comparison JSON | `ca31ff2311851809b9820a21f69f78ea9aaee34e5e67561c69832f2752097fba` |
+| MKLDNN-off comparison JSON | `582c429e331f4db96970ab41b9dd0aa86ccbcb0e3549a4f5858ecb7a0f404ba7` |
+
+## Remaining resolution
+
+The matched tests identify separate loss, decoder propagation, and backbone contributions. They isolate the shared consumer sum from downstream rounding. They establish no training-trajectory or optimizer equivalence because neither framework updates its weights. Strict full-graph parity remains open. The next targeted experiment should capture individual gradient paths through the block 2.0 RepDWConv sums and SE path, replay late compress BN and convolution parameters from exact internal coefficients, and separate decoder embedding scatter from propagated decoder error. The precision and alternate-layout diagnostics in this run cover LayerNorm. Extending them to the failing backbone operators and checking the individual multiply and summation paths remains open.

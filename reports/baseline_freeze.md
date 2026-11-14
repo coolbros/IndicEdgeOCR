@@ -22,3 +22,5 @@ The conversion and inference commands are documented in the [baseline audit and 
 The reproduced T4 recognition summary is SHA-256 `42d3006e50c3dd0d91481fb0389afdd4a3df74292a93f03b79924f0492de9c69`.
 
 A local Windows CPU replay of the first immutable Paddle inference crop used the configured default heads. Decoded strings match at batch sizes 1 and 4 and match the archived Paddle string. The CTC probability maximum changes by 1.192e-7 from batching and differs from Paddle by at most 1.257e-7 at batch size 1. This is a single-crop batch sensitivity check.
+
+The operational baseline is frozen for Phase 4. The validation run completed 101 nonzero-LR updates and a checked resume. The remaining strict CPU and CUDA gradient outliers are documented with their measured practical scope. Full-graph bitwise or strict FP32 parity is not a claim of this freeze. The next phase starts with licensing and split verification for an Indic evaluation corpus and offline tokenization comparisons.

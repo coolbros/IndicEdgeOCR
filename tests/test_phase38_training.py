@@ -115,6 +115,21 @@ class Phase38TrainingTest(unittest.TestCase):
         self.assertTrue(torch.isinf(result["CTCLoss"]))
         self.assertTrue(torch.isfinite(result["NRTRLoss"]))
 
+    def test_embedding_scatter_accumulates_repeats_and_ignores_pad(self):
+        from ppocrv6_torch.model import Embeddings
+
+        for device in ["cpu", *(["cuda"] if torch.cuda.is_available() else [])]:
+            layer = Embeddings(8, padding_idx=7).to(device)
+            indices = torch.tensor([[3, 7, 3, 5]], device=device)
+            value = layer(indices)
+            self.assertFalse(value[0, 1].any())
+            upstream = torch.arange(4., device=device).view(1, 4, 1).expand_as(value)
+            grad, = torch.autograd.grad(value, layer.embedding.weight, upstream)
+            expected = torch.zeros_like(grad)
+            expected[3] = 2 * 512**0.5
+            expected[5] = 3 * 512**0.5
+            torch.testing.assert_close(grad, expected)
+
     def test_real_checkpoint_loads_with_default_head_shapes(self):
         from safetensors.torch import load_file
         checkpoint = Path("weights/converted/PP-OCRv6_medium_rec.safetensors")

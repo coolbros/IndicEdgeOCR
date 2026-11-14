@@ -35,7 +35,7 @@ def run(args):
             or catalog["runtime"]["device"] != args.device):
         raise ValueError("Phase 3.7 capture mismatch")
     args.output.mkdir(parents=True, exist_ok=False)
-    captured, result = {}, {}
+    captured, result, diagnostics = {}, {}, {}
 
     with np.load(prior_path, allow_pickle=False) as prior, (
         np.load(args.reference / "values.npz", allow_pickle=False)
@@ -172,7 +172,8 @@ def run(args):
             value = vjp(grad, y, b.tensor(dy), {"weight": layer.embedding.weight})["weight"]
             save(f"decoder/embedding/{order}/grad", value, True)
             embedding_grads[order] = b.array(value)
-        result["embedding_order"] = gradient_metrics(embedding_grads["forward"], embedding_grads["reverse"])
+        diagnostics["embedding_padding_row_max"] = float(np.abs(embedding_grads["forward"][0]).max())
+        diagnostics["embedding_order"] = gradient_metrics(embedding_grads["forward"], embedding_grads["reverse"])
     path = args.output / "values.npz"
     if not args.reference:
         np.savez_compressed(path, **captured)
@@ -180,7 +181,7 @@ def run(args):
         "runtime": b.versions(), "prior": catalog["capture_sha256"], "inputs": BASELINE,
         "flags": {name: os.environ.get(name) for name in ("FLAGS_use_mkldnn", "FLAGS_use_tf32",
                                                             "NVIDIA_TF32_OVERRIDE", "CUDA_VISIBLE_DEVICES")},
-        "seed": 3808, "sha256": digest(path) if path.exists() else None, "rows": result,
+        "seed": 3808, "sha256": digest(path) if path.exists() else None, "rows": result, "diagnostics": diagnostics,
     }, indent=2, allow_nan=False), encoding="utf8")
 
 

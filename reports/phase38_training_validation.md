@@ -54,3 +54,5 @@ The audited crops come from 61 training source images and six distinct validatio
 | Step 102 best | `6f9243470c0f276d2d21e26c66719b1d91a437cb641598483cf1497fe620bb65` |
 
 Runtime was one Tesla T4, Torch 2.9.1+cu126, CUDA 12.6, cuDNN 9.10.2 and Accelerate 1.15.0. The official checkpoint SHA was rechecked after both processes. The split manifests, checkpoint sidecars and per-step metrics are also available under the ignored `artifacts/phase38/` directory.
+
+The published 677,305,063-byte `latest.pt` was also downloaded, verified against its sidecar SHA-256 and loaded strictly into a fresh default model on CPU. Its scheduler and all 318 Adam state entries report step 102.

@@ -90,3 +90,10 @@ PYTHONPATH=src python tools/evaluate_heldout.py \
 - [LayerNorm request controls](reports/phase37_layernorm_backward.md)
 - [Gradient error and accumulation analysis](reports/phase37_gradient_error_analysis.md)
 - [Indic evaluation corpus plan](reports/indic_evaluation_corpus_plan.md)
+
+## Phase 3.8
+
+- [Frozen default checkpoint and inference regression](reports/baseline_freeze.md)
+- [Training pipeline and bounded T4 validation](reports/phase38_training_validation.md)
+- [Backward parity follow-up](reports/phase38_backward_parity.md)
+- [Phase 4 tokenizer and corpus readiness](reports/phase4_indic_readiness.md)

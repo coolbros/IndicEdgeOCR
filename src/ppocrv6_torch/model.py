@@ -9,6 +9,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from .backbone import BatchNorm2d, PPLCNetV4, conv2d
+from .vocabulary import RecognitionTokens
 
 
 class Mlp(nn.Module):
@@ -137,14 +138,14 @@ class FCTranspose(nn.Module):
 
 
 class Embeddings(nn.Module):
-    def __init__(self, classes):
+    def __init__(self, classes, padding_idx=0):
         super().__init__()
-        self.embedding = nn.Embedding(classes, 512, padding_idx=0)
+        self.embedding = nn.Embedding(classes, 512, padding_idx=padding_idx)
         nn.init.normal_(self.embedding.weight, std=512**-0.5)
 
     def forward(self, tokens):
         # Paddle zeroes the output at padding positions even with a nonzero row.
-        x = self.embedding(tokens).masked_fill(tokens.unsqueeze(-1) == 0, 0.0)
+        x = self.embedding(tokens).masked_fill(tokens.unsqueeze(-1) == self.embedding.padding_idx, 0.0)
         return x * math.sqrt(512)
 
 
@@ -205,9 +206,9 @@ class NRTRBlock(nn.Module):
 
 
 class NRTRHead(nn.Module):
-    def __init__(self, classes):
+    def __init__(self, classes, padding_idx=0):
         super().__init__()
-        self.embedding = Embeddings(classes)
+        self.embedding = Embeddings(classes, padding_idx)
         self.positional_encoding = PositionalEncoding()
         self.decoder = nn.ModuleList(NRTRBlock() for _ in range(4))
         self.tgt_word_prj = nn.Linear(512, classes, bias=False)
@@ -228,13 +229,13 @@ class NRTRHead(nn.Module):
 
 
 class MultiHead(nn.Module):
-    def __init__(self, ctc_classes):
+    def __init__(self, tokens):
         super().__init__()
         self.encoder_reshape = Im2Seq()
         self.ctc_encoder = SequenceEncoder()
-        self.ctc_head = CTCHead(ctc_classes)
+        self.ctc_head = CTCHead(tokens.ctc_classes)
         self.before_gtc = nn.Sequential(nn.Flatten(2), FCTranspose())
-        self.gtc_head = NRTRHead(ctc_classes + 4)
+        self.gtc_head = NRTRHead(tokens.nrtr_classes, tokens.pad)
 
     def forward(self, x, targets=None):
         z = self.ctc_encoder(x)
@@ -251,12 +252,11 @@ class MultiHead(nn.Module):
 class PPOCRv6Medium(nn.Module):
     """Input is normalized NCHW. Training targets follow Paddle's KeepKeys order."""
 
-    def __init__(self, ctc_classes=18710):
+    def __init__(self, ctc_classes=18710, nrtr_classes=18714, *, blank=0, pad=0, bos=2, eos=3):
         super().__init__()
-        if ctc_classes != 18710:
-            raise ValueError("PP-OCRv6 medium uses the fixed official CTC dictionary")
+        self.tokens = RecognitionTokens(ctc_classes, nrtr_classes, blank, pad, bos, eos)
         self.backbone = PPLCNetV4()
-        self.head = MultiHead(ctc_classes)
+        self.head = MultiHead(self.tokens)
 
     def forward(self, x, targets=None):
         return self.head(self.backbone(x), targets)
